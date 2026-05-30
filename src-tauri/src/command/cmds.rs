@@ -1,8 +1,6 @@
 use crate::command::model::ServerState;
 use base64::prelude::*;
-use futures::StreamExt;
 use notify_rust::Notification;
-use reqwest::Client;
 use serde::Serialize;
 use std::env;
 use std::fs;
@@ -20,7 +18,7 @@ use tauri::WindowEvent;
 use tauri::{
     path::BaseDirectory, utils::config::WindowConfig, AppHandle, Emitter, LogicalSize, Manager,
 };
-use tauri_plugin_http::reqwest;
+use tauri_plugin_http::reqwest::Client;
 use walkdir::WalkDir;
 use warp::Filter;
 use zip::write::FileOptions;
@@ -347,11 +345,10 @@ pub async fn download_file(
         }
     }
     let total_size = resp.content_length();
-    let mut stream = resp.bytes_stream();
+    let mut resp = resp;
     let mut file = File::create(&save_path).map_err(|e| e.to_string())?;
     let mut downloaded: u64 = 0;
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| e.to_string())?;
+    while let Some(chunk) = resp.chunk().await.map_err(|e| e.to_string())? {
         file.write_all(&chunk).map_err(|e| e.to_string())?;
         downloaded += chunk.len() as u64;
         app.emit(
@@ -362,7 +359,7 @@ pub async fn download_file(
                 total: total_size.unwrap_or(0),
             },
         )
-        .unwrap();
+        .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
